@@ -16,6 +16,7 @@ peda-heap
   * `heap checkfree address` -- try free chunk at address and print some info
   
 ### [IDA]
+  * `xdebug` -- execute commands in file peda-cmd.
   * `xstruct struct_name address` -- try parsing info follow structs(Local Types) was reversed by IDA,structs was imported by peda from file **peda-structs**
   
   > **Use:** In IDA shift+F1->LocalTypes Window -> Edit a struct -> copy struct.Create file **peda-structs** and parse content in this       file.Struct format like:
