@@ -35,7 +35,7 @@ peda-heap
   * `xp address` -- exam an address with PIE flag
 
 ## Installation:
-    git clone https://github.com/mipu/peda-heap ~/peda-heap
+    git clone git://github.com/Mipu94/peda-heap.git ~/peda-heap
     echo "source ~/peda-heap/peda.py" >> ~/.gdbinit
 
 ## Screenshot
