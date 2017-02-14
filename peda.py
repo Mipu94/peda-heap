@@ -57,7 +57,7 @@ REGISTERS = {
     64: ["rax", "rbx", "rcx", "rdx", "rsi", "rdi", "rbp", "rsp", "rip",
          "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15"]
 }
-
+#globals heap_data
 ###########################################################################
 class PEDA(object):
     """
@@ -3148,11 +3148,11 @@ class PEDA(object):
         next_prev_inuse = int(nextchunk['size']) & self.PREV_INUSE == 1
         return next_prev_inuse
 
-    def malloc_chunk(self,addr,isTop=0):
+    def malloc_chunk(self,addr,isTop=0,debug=0):
         """
         Prints out the malloc_chunk at the specified address.
         """
-        if addr==0x0:
+        if self.is_address(addr)!=1:
             return None
         def ascii_char(ch):
             if ord(ch) >= 0x20 and ord(ch) < 0x7e:
@@ -3163,7 +3163,8 @@ class PEDA(object):
         size = int(chunk['size'])
         if (size <= 8)|(size > addr) :
             print(red("overlap at 0x%x -- size=0x%x"%(addr,size)))
-            return None
+            if debug==0:
+                return None
         prev_inuse = (size & self.PREV_INUSE) == 1
         is_mmaped = (size & self.IS_MMAPED) == 2
         non_main_arena = (size & self.NON_MAIN_ARENA) == 4
@@ -3186,17 +3187,20 @@ class PEDA(object):
             warning_msg("cannot retrieve memory content at 0x%x"%addr)
         asciibytes = "".join([ascii_char(c) for c in bytes_iterator(bytes)])
         show += " |" + asciibytes + "|"
-
-        if self.chunk_inuse(addr):
-            show += green(' INUSED')
-        if prev_inuse:
-            show += green(' PREV_INUSE')
-        if is_mmaped:
-            show += green(' IS_MMAPED')
-            if "INUSED" not in show:
-                show += green(' INUSED')    
-        if non_main_arena:
-            show += green(' NON_MAIN_ARENA')
+        if debug==0 :
+            if self.is_address(addr+size)==False:
+                print(red("overlap at 0x%x -- size=0x%x"%(addr,size)))
+                return
+            if self.chunk_inuse(addr):
+                show += green(' INUSED')
+            if prev_inuse:
+                show += green(' PREV_INUSE')
+            if is_mmaped:
+                show += green(' IS_MMAPED')
+                if "INUSED" not in show:
+                    show += green(' INUSED')    
+            if non_main_arena:
+                show += green(' NON_MAIN_ARENA')
         print(show)
         return chunk
     
@@ -3214,11 +3218,12 @@ class PEDA(object):
             print(red('Could not find the heap'))
             return
         
-        top = main_arena['top']
+        top = self.get_heap_bounds_sbrk()[0]
         last_remainder = main_arena['last_remainder']
 
         print('Top Chunk: ',top)
         print('Last Remainder: ',last_remainder)
+        
         addr = heap_base
         while addr <= top:
             isTop = 0
@@ -3238,6 +3243,54 @@ class PEDA(object):
         ############# mmap heap chunks #########
         for (start,end ) in self.get_heap_bounds_mmap():
             addr = start
+            if not self.is_address(addr):
+                return
+            chunk = self.malloc_chunk(addr,0)
+        
+
+    def save_heap_state(self):
+        """
+        save all chunk in file /tmp/peda-heap
+        """
+        ########## sbrk heap chunks ###########
+        print("called")
+        filename = "/tmp/peda-heap"
+        heap_all=""
+        main_arena = self.get_main_arena()
+        if main_arena == None:
+            return
+        heap_base = self.get_heap_bounds_sbrk()[0]
+        if heap_base == None:
+            print(red('Could not find the heap'))
+            return
+        
+        top = main_arena['top']
+
+        addr = heap_base
+        while addr <= top:
+            isTop = 0
+            if addr == top:
+                isTop = 1
+            if not self.is_address(addr):
+                break
+            chunk = self.format_chunk(addr)
+            heap_all+=str(addr)+" "
+            if isTop==1:
+                break
+            if chunk == None:
+                    f=open(filename,"w")
+                    f.write(heap_all)
+                    f.close()
+                    return
+            size = int(chunk['size'])
+            # Clear the bottom 3 bits
+            size &= ~7
+            if size == 0:
+                break
+            addr += size
+        ############# mmap heap chunks #########
+        for (start,end ) in self.get_heap_bounds_mmap():
+            addr = start
             while addr <= end:
                 isTop = 0
                 if addr == end:
@@ -3246,13 +3299,35 @@ class PEDA(object):
                     return
                 chunk = self.malloc_chunk(addr,isTop)
                 if chunk == None:
+                    f=open(filename,"w")
+                    f.write(heap_all)
+                    f.close()
                     return
+                heap_all+=str(addr)+" "
                 size = int(chunk['size'])
                 size &= ~7
                 if size == 0:
                     break
                 addr += size
+        f=open(filename,"w")
+        f.write(heap_all)
+        f.close()
 
+    def restore_heap_state(self):
+        filename = "/tmp/peda-heap"
+        f = open(filename,"r")
+        data = f.readline()
+        f.close()
+        heap_chunks = data.strip().split(" ")
+        main_arena = self.get_main_arena()
+        top = main_arena['top']
+        top = int(top)
+        for addr in heap_chunks:
+            chunk=int(addr,10)
+            if chunk == top:
+                self.malloc_chunk(chunk,1,1)
+                return
+            self.malloc_chunk(chunk,0,1)
 
     def bins(self,addr=None):
         main_arena = self.get_main_arena(addr)
@@ -3405,51 +3480,71 @@ class PEDA(object):
             print(blue("forward_chunk inused,you can change flag inused at: 0x%x"%(nextchunk_addr+nextsize+size_t_size)))   
     
     #heap trace
-    class Finish_breakpoint(gdb.FinishBreakpoint):
-        def __init__(self,peda,namebp,arg=0):
-            gdb.FinishBreakpoint.__init__(self,gdb.newest_frame(),internal=True)
-            self.peda = peda
-            self.namebp = namebp
-            self.arg = arg
+    def heap_trace(self):
+        class Finish_breakpoint(gdb.FinishBreakpoint):
+            def __init__(self,namebp,arg=""):
+                gdb.FinishBreakpoint.__init__(self,gdb.newest_frame(),internal=True)
+                self.namebp = namebp
+                self.arg = arg
 
-        def stop(self):
-            if "_int_malloc" == self.namebp:
-                chunk = int(self.return_value)
-                print(green("malloc(0x%x)->0x%x"%(self.arg,chunk)))
-            if "_int_realloc" == self.namebp:
-                chunk = hex(int(self.return_value))
-                print(green(self.arg+chunk ) )    
-        def out_of_scope(self):
-            print(red("out_of_scope"))  
-            if "_int_malloc" == self.namebp:
-                chunk = int(self.return_value)
-                print(green("malloc(0x%x)->0x%x"%(self.arg,chunk)))
-            if "_int_realloc" == self.namebp:
-                chunk = hex(int(self.return_value))
-                print(green(self.arg+chunk ) ) 
+            def stop(self):
+                if "_int_malloc" == self.namebp:
+                    chunk = int(self.return_value)
+                    print(green("%s->0x%x"%(self.arg,chunk)))
+                if "_int_realloc" == self.namebp:
+                    chunk = hex(int(self.return_value))
+                    print(green(self.arg+chunk ) )    
+            def out_of_scope(self):
+                print(red("out_of_scope"))  
+                if "_int_malloc" == self.namebp:
+                    chunk=0
+                    if self.return_value == None:
+                        chunk=0
+                    else:    
+                        chunk = int(self.return_value)
+                    print(green("%s->0x%x"%(self.arg,chunk)))
+                if "_int_realloc" == self.namebp:
+                    chunk=0
+                    if self.return_value == None:
+                        chunk=0
+                    else:    
+                        chunk = int(self.return_value)
+                    print(green("%s->0x%x"%(self.arg,chunk))) 
 
-    class Handler_Breakpoint(gdb.Breakpoint):
-        def set_peda(self,peda):
-            self.peda = peda
-            
-        def stop(self):
-            if "_int_malloc" in self.location:
-                size = int(gdb.parse_and_eval("bytes"))
-                print(blue("malloc(0x%x)"%size))
-                peda.Finish_breakpoint(self.peda,"_int_malloc",size)
-            if "_int_free" in self.location:
-                chunk = int(gdb.parse_and_eval("p"))
-                print(green("free(%0x)"%chunk))
-            if "_int_realloc" in self.location:
-                oldchunk = int(gdb.parse_and_eval("oldp"))
-                oldsize = int(gdb.parse_and_eval("oldsize"))
-                newsize = int(gdb.parse_and_eval("nb"))
-                arg = "realloc(chunk=0x%x,oldsize=0x%x,newsize=0x%x)->"%(oldchunk,oldsize,newsize)
-                print(blue(arg))
-                peda.Finish_breakpoint(self.peda,"_int_realloc",arg)
-            return
-            
-    
+        class Handler_Breakpoint(gdb.Breakpoint):
+            def stop(self):
+                if "_int_malloc" in self.location:
+                    size = int(gdb.parse_and_eval("bytes"))
+                    arg= "malloc(0x%x)"%size
+                    print(blue(arg))
+                    Finish_breakpoint("_int_malloc",arg)
+                if "_int_free" in self.location:
+                    chunk = int(gdb.parse_and_eval("p"))
+                    print(green("free(0x%x)"%chunk))
+                if "_int_realloc" in self.location:
+                    oldchunk = int(gdb.parse_and_eval("oldp"))
+                    oldsize = int(gdb.parse_and_eval("oldsize"))
+                    newsize = int(gdb.parse_and_eval("nb"))
+                    arg = "realloc(chunk=0x%x,oldsize=0x%x,newsize=0x%x)"%(oldchunk,oldsize,newsize)
+                    print(blue(arg))
+                    Finish_breakpoint("_int_realloc",arg)
+                return
+        trace_malloc = Handler_Breakpoint("*_int_malloc")
+        trace_free = Handler_Breakpoint("*_int_free")
+        trace_realloc = Handler_Breakpoint("*_int_realloc")
+      
+    def heap_save_change(self):
+        class Finish_breakpointx(gdb.FinishBreakpoint):
+            def stop(self):
+                    peda.save_heap_state()
+
+        class Handler_Breakpointx(gdb.Breakpoint):        
+            def stop(self):
+                    Finish_breakpointx()
+                
+        trace_malloc = Handler_Breakpointx("*_int_malloc")
+        trace_free = Handler_Breakpointx("*_int_free")
+        trace_realloc = Handler_Breakpointx("*_int_realloc")
     
 ###########################################################################
 class PEDACmd(object):
@@ -3464,35 +3559,47 @@ class PEDACmd(object):
     ##############################
     #           NEW              #
     ##############################
-    def test(self):
-        """
-        test func
-        """
-        return 
+    
+
 
     def heap(self, *arg):
         """
         Print heap info
         Usage:
             MYNAME all [main_arena]
-            MYNAME freed [main_arena]
-            MYNAME fastbin [main_arena]
             MYNAME bins [main_arena]
             MYNAME checkfree address
+            MYNAME debug
+            MYNAME freed [main_arena]
+            MYNAME fastbin [main_arena]
+            MYNAME restore
             MYNAME trace
         """
         if self._is_running() == None:
             return
-        options = ["all", "bins","checkfree", "fastbin", "freed","trace"]
+        options = ["all", "bins","checkfree","debug","fastbin","freed","restore","trace"]
         (opt,) = normalize_argv(arg, 1)
         if opt is None or opt not in options:
             self._missing_argument()
         func = getattr(self, "heap_%s" % opt)
         func(*arg[1:])
         return
-    heap.options = ["all", "bins","checkfree", "fastbin", "freed","trace"]
+    heap.options = ["all", "bins","checkfree","debug","fastbin","freed","restore","trace"]
+    
+    def heap_debug(self):
+        """
+        Save heap status after malloc,free,realloc and compare with current heap status to detect overflow 
+        """
+        peda.save_heap_state()
+        peda.heap_save_change()
+        
+    def heap_restore(self):
+        """
+        restore last heap state
+        """
+        peda.restore_heap_state()
 
-    def heap_trace(self,*arg):
+    def heap_trace(self):
         """
         Trace heap malloc,free,realloc
         Usage:
@@ -3503,12 +3610,7 @@ class PEDACmd(object):
             if main_arena == None:
                 print("symbol main_arena not found!")
                 return
-            trace_malloc = peda.Handler_Breakpoint("*_int_malloc")
-            trace_malloc.set_peda(peda)
-            trace_free = peda.Handler_Breakpoint("*_int_free")
-            trace_free.set_peda(peda)
-            trace_realloc = peda.Handler_Breakpoint("*_int_realloc")
-            trace_realloc.set_peda(peda)
+        peda.heap_trace()
 
 
     def heap_checkfree(self,*arg):
@@ -3524,7 +3626,7 @@ class PEDACmd(object):
 
     def heap_all(self,*arg):
         """
-        Print all fastbin
+        Print all chunks
         Usage:
         heap all [main_arena]
         """
@@ -3545,6 +3647,19 @@ class PEDACmd(object):
             addr = int(arg[0],16)
         peda.bins(addr)
         return
+    
+    def heap_fastbin(self,*arg):
+        """
+        Print binlist
+        Usage:
+        heap bins [main_arena]
+        """
+        addr = None
+        if len(arg) == 1:
+            addr = int(arg[0],16)
+        peda.fastbin(addr)
+        return
+
 
     def heap_freed(self,*arg):
         """
@@ -3593,6 +3708,10 @@ class PEDACmd(object):
         """
         result = peda.execute("source peda-cmd")
         return
+
+    def showkey(self):
+        "Show key"
+        print("http://libc.babyphd.net/libc_rop | 804e20f0c587d9624b3001b1b6bb8e0d")
 
     def xstruct(self,*arg):
         """
