@@ -3211,17 +3211,21 @@ class PEDA(object):
         """
         ########## sbrk heap chunks ###########
         main_arena = self.get_main_arena(addr)
+        last_remainder = None
         if main_arena == None:
-            return
+            last_remainder = None
+        else:
+            last_remainder = main_arena['last_remainder']
         heap_base = self.get_heap_bounds_sbrk()[0]
         if heap_base == None:
             print(red('Could not find the heap'))
             return
         
-        top = self.get_heap_bounds_sbrk()[0]
-        last_remainder = main_arena['last_remainder']
+        top = self.get_heap_bounds_sbrk()[1]
+        if main_arena !=None:
+            top= main_arena['top']
 
-        print('Top Chunk: ',top)
+        print('Top Chunk: ',hex(top))
         print('Last Remainder: ',last_remainder)
         
         addr = heap_base
