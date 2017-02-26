@@ -3045,6 +3045,8 @@ class PEDA(object):
 
         def get_byte(x,bits=32):
             ret={
+                '__int16':2,
+                '__int32':4,
                 'uint8_t':1,
                 'int' : 4,
                 '__int' : 4,
@@ -3216,6 +3218,7 @@ class PEDA(object):
             last_remainder = None
         else:
             last_remainder = main_arena['last_remainder']
+
         heap_base = self.get_heap_bounds_sbrk()[0]
         if heap_base == None:
             print(red('Could not find the heap'))
@@ -3223,11 +3226,10 @@ class PEDA(object):
         
         top = self.get_heap_bounds_sbrk()[1]
         if main_arena !=None:
-            top= main_arena['top']
-
+            top= int(main_arena['top'])
+        
         print('Top Chunk: ',hex(top))
         print('Last Remainder: ',last_remainder)
-        
         addr = heap_base
         while addr <= top:
             isTop = 0
@@ -3637,6 +3639,7 @@ class PEDACmd(object):
         addr = None
         if len(arg) == 1:
             addr = int(arg[0],16)
+
         peda.heapall(addr)
         return
     
@@ -3684,12 +3687,12 @@ class PEDACmd(object):
         Usage:
             MYNAME n0 address (xp 10wx 0xdeadbeef)
         """
-        address = int(arg[0],16)
-        exm = arg[1]
+        address = int(arg[1],16)
+        exm = arg[0]
         filename = peda.getfile()
         base = peda.get_vmmap(filename)[0][0]
         location=address+base
-        peda.execute("x/%s %s"%(exm,hex(base+address)))
+        peda.execute("x/%s %s"%(exm,hex(location)))
         return
 
     def break_pie(self,*arg):
