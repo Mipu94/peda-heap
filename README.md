@@ -8,7 +8,8 @@ peda-heap
 ## Commands:
 
 ### [heap]
-  * `heap all [main_arena]` -- print heap info (mmap + sbrk)
+  * `heap set_mainarena [new_addr]` -- set main_arena = newvalue
+  * `heap all` -- print heap info (mmap + sbrk)
   * `heap freed [main_arena]` -- print freed chunks  (fastbinY + bins)
   * `heap fastbin [main_arena]` -- print freed chunks(fastbinY)
   * `heap bins [main_arena]` -- print freed chunks (bins)
