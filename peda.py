@@ -3100,18 +3100,25 @@ class PEDA(object):
     PREV_INUSE = 1
     IS_MMAPED = 2
     NON_MAIN_ARENA = 4
+    MAIN_ARENA=None
+    def setmainarena(self,addr):
+        if addr!=0:
+            self.MAIN_ARENA=addr
+
     def value_from_type(self,type_name, addr):
         gdb_type = gdb.lookup_type(type_name)
         return gdb.Value(addr).cast(gdb_type.pointer()).dereference()
 
     def get_main_arena(self,addr=None):
+        if addr==None:
+            addr=self.MAIN_ARENA
+
         if addr == None:
             main_arena = gdb.lookup_symbol('main_arena')[0]
             if main_arena is not None:
                 main_arena = main_arena.value()
         else:
-            main_arena = value_from_type('struct malloc_state', addr)
-
+            main_arena = peda.value_from_type('struct malloc_state', addr)
         if main_arena == None:
             print(red('Not found symbol main_arena'))
         return main_arena
@@ -3138,9 +3145,20 @@ class PEDA(object):
                             yield(start,end)
     
     def format_chunk(self,addr):
+        #chunk = self.value_from_type('struct malloc_chunk', addr)
+        """{
+              prev_size = 0x0, 
+              size = 0x0, 
+              fd = 0xfc8, 
+              bk = 0x7ffcd14bb2a0, 
+              fd_nextsize = 0x138bfa0, 
+              bk_nextsize = 0x0
+            }"""
         if not isinstance(addr, six.integer_types):
             addr = int(addr)
-        chunk = self.value_from_type('struct malloc_chunk', addr)
+        bits=peda.getarch()[1]
+        size_t=int(bits/8)
+        chunk=peda.value_from_type("struct malloc_chunk",addr)
         return chunk
 
     def chunk_inuse(self,addr):
@@ -3170,6 +3188,7 @@ class PEDA(object):
         prev_inuse = (size & self.PREV_INUSE) == 1
         is_mmaped = (size & self.IS_MMAPED) == 2
         non_main_arena = (size & self.NON_MAIN_ARENA) == 4
+        size=size&0xfffffff8
         show = hex(addr)
         show += " SIZE=" + hex(size & 0xfffffff8)
         if isTop:
@@ -3190,15 +3209,17 @@ class PEDA(object):
         asciibytes = "".join([ascii_char(c) for c in bytes_iterator(bytes)])
         show += " |" + asciibytes + "|"
         if debug==0 :
-            if self.is_address(addr+size)==False:
+            if self.is_address(addr+size-0x10)==False:
                 print(red("overlap at 0x%x -- size=0x%x"%(addr,size)))
-                return
+                return None
+            if is_mmaped:
+                show += green(' IS_MMAPED')
+                print(show)
+                return chunk
             if self.chunk_inuse(addr):
                 show += green(' INUSED')
             if prev_inuse:
                 show += green(' PREV_INUSE')
-            if is_mmaped:
-                show += green(' IS_MMAPED')
                 if "INUSED" not in show:
                     show += green(' INUSED')    
             if non_main_arena:
@@ -3237,6 +3258,7 @@ class PEDA(object):
                 isTop = 1
             if not self.is_address(addr):
                 break
+
             chunk = self.malloc_chunk(addr,isTop)
             if chunk == None:
                     return
@@ -3485,6 +3507,7 @@ class PEDA(object):
         else:
             print(blue("forward_chunk inused,you can change flag inused at: 0x%x"%(nextchunk_addr+nextsize+size_t_size)))   
     
+
     #heap trace
     def heap_trace(self):
         class Finish_breakpoint(gdb.FinishBreakpoint):
@@ -3578,19 +3601,21 @@ class PEDACmd(object):
             MYNAME debug
             MYNAME freed [main_arena]
             MYNAME fastbin [main_arena]
+            MYNAME main_arena [main_arena]
             MYNAME restore
             MYNAME trace
         """
+
         if self._is_running() == None:
             return
-        options = ["all", "bins","checkfree","debug","fastbin","freed","restore","trace"]
+        options = ["all", "bins","checkfree","debug","fastbin","freed","restore","trace","set_mainarena"]
         (opt,) = normalize_argv(arg, 1)
         if opt is None or opt not in options:
             self._missing_argument()
         func = getattr(self, "heap_%s" % opt)
         func(*arg[1:])
         return
-    heap.options = ["all", "bins","checkfree","debug","fastbin","freed","restore","trace"]
+    heap.options = ["all", "bins","checkfree","debug","fastbin","freed","restore","trace","set_mainarena"]
     
     def heap_debug(self):
         """
@@ -3680,7 +3705,20 @@ class PEDACmd(object):
         peda.fastbin(addr)
         peda.bins(addr)
         return 
-        
+    
+    def heap_set_mainarena(self,*arg):
+        """
+        set main_arena 0xdeadbeef
+        """
+        addr = None
+        if len(arg) == 1:
+            addr = int(arg[0],16)
+        peda.setmainarena(addr)
+
+        return 
+            
+
+
     def exam_pie(self, *arg):
         """
             Examine Memory(PIE)
@@ -6970,4 +7008,3 @@ peda.execute("set step-mode on")
 peda.execute("set print pretty on")
 peda.execute("handle SIGALRM print nopass") # ignore SIGALRM
 peda.execute("handle SIGSEGV stop print nopass") # catch SIGSEGV
-
