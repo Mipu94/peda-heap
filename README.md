@@ -35,7 +35,7 @@ peda-heap
 ### [PIE]
   * `bp address` -- breakpoint an address with PIE flag
   * `xp address` -- exam an address with PIE flag
-
+  * `ba address` -- get offset of an address on libc with memory address
 ## Installation:
     git clone git://github.com/Mipu94/peda-heap.git ~/peda-heap
     echo "source ~/peda-heap/peda.py" >> ~/.gdbinit
