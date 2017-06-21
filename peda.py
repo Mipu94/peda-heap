@@ -3745,6 +3745,21 @@ class PEDACmd(object):
         peda.execute("break *%s"%(hex(base+address)))
         return
     
+    def baseaddr(self,*arg):
+        """
+        Get offset value of address in memory.
+        Usage:
+            MYNAME address ( ba 0xfeeddead) 
+        """
+        address=int(arg[0],16)
+        #chain = peda.examine_mem_reference(address, depth=0)
+        #print(chain)
+        #text += format_reference_chain(chain) + "\n"
+        #print(text)
+        offest = address - peda.get_vmrange(address)[0]
+        print(hex(offest))
+
+
     def xdebug(sefl,*arg):
         """
         Excute list command read from file peda-cmd
@@ -6989,6 +7004,7 @@ Alias("stack", "peda telescope $sp")
 Alias("viewmem", "peda telescope")
 Alias("reg", "peda xinfo register")
 #mipu94
+Alias("ba","baseaddr")
 Alias("bp","break_pie")
 Alias("xp","exam_pie")
 
@@ -7008,3 +7024,4 @@ peda.execute("set step-mode on")
 peda.execute("set print pretty on")
 peda.execute("handle SIGALRM print nopass") # ignore SIGALRM
 peda.execute("handle SIGSEGV stop print nopass") # catch SIGSEGV
+
