@@ -3549,7 +3549,7 @@ class PEDA(object):
                     Finish_breakpoint("_int_malloc",arg)
                 if "_int_free" in self.location:
                     chunk = int(gdb.parse_and_eval("p"))
-                    print(green("free(0x%x)"%chunk))
+                    print(yellow("free(0x%x)"%(chunk+0x10)))
                 if "_int_realloc" in self.location:
                     oldchunk = int(gdb.parse_and_eval("oldp"))
                     oldsize = int(gdb.parse_and_eval("oldsize"))
