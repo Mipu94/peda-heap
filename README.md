@@ -31,7 +31,7 @@ peda-heap
     };
     ```
    * `idastruct struct_name address` -- gdb auto read structs was defined in *.idb,*.i64 and parse.
-  > **Use:** Copy your *.idb,*.i64 file to current gdb folder.
+  > **Use:** Copy your *.idb,*.i64 file to current folder gdb is running.
    
 ### [PIE]
   * `bp address` -- breakpoint an address with PIE flag
