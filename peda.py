@@ -33,8 +33,6 @@ try:
 except ImportError:
     import pickle
 
-
-
 from skeleton import *
 from shellcode import *
 from utils import *
@@ -3029,10 +3027,10 @@ class PEDA(object):
                 ])
 
         return text
-	
-	##############################
-	#			Mipu94			 #
-	##############################
+    
+    ##############################
+    #           Mipu94           #
+    ##############################
     def parse_struct(self,filename):
         """
         Read struct data from file
@@ -3094,6 +3092,131 @@ class PEDA(object):
             elements={}
             structs[names[i]]=name_bits
         return structs
+
+    def dump_struct(self,structs,name,addr,arch,filename):
+        """
+        dump struct data
+        """
+        def format_reference_chain_x(chain,maps):
+            """
+            Colorize a chain of references
+            """
+            def where_ru(maps,addr):
+                addr = to_int(addr)
+                for (start, end, perm, mapname) in maps:
+                    if start <= addr and addr < end:
+                        if "home" in mapname:
+                            return "[infile]" 
+                        if "/lib/" in mapname:
+                            return "[inlibc]"
+                        if "heap" in mapname:
+                            return "[heap]"
+                        return mapname
+                return None
+
+            v = t = vn = None
+            text = ""
+            if not chain:
+                text += "Cannot access memory address"
+            else:
+                first = True
+                for (v, t, vn) in chain:
+                    if t != "value":
+                        text += "%s%s" % ("--> " if not first else "", format_address(v, t))
+                        text += where_ru(maps,v)
+                    else:
+                        text += "%s%s" % ("--> " if not first else "", v)
+                    first = False
+
+                if vn:
+                    text += "(%s)" % vn
+                else:
+                    if v != "0x0":
+                        s = hex2str(v)
+                        if is_printable(s, "\x00"):
+                            text += "(%s)" % string_repr(s.split(b"\x00")[0])
+            return text
+
+        def exam_data(structs,name,address,arch,vmmaps):
+            #structs [name,size,num] ['name[32]', 1, 32]
+            result = [] #[name,data]
+            for str_name in structs:
+                base_addr = address
+                if str_name == name:                    
+                    for i in range(len(structs[name])):                     
+                        element = structs[name][i]
+                        #if string
+                        if element[1]==1: #size=1
+                            if element[2]>1: # string
+                                tmp = self.examine_mem_reference(base_addr)
+                                tmpdata = format_reference_chain_x(tmp,vmmaps)
+                                result.append([element[0],tmpdata])
+                                base_addr=base_addr+element[2]
+                                continue
+                            if element[2]==1:#1byte
+                                out = self.execute_redirect("x/bx %s" % base_addr)
+                                strg = out.split(":\t")[-1].strip()
+                                result.append([element[0],strg])
+                                base_addr=base_addr+element[2]
+                                continue
+                        #if hword
+                        if element[1]==2:
+                            te=str(element[2])+"hx"
+                            out = self.execute_redirect("x/%s %s" % (te,base_addr))
+                            strg = out.split(":\t")[-1].strip()
+                            result.append([element[0],strg])
+                            base_addr=base_addr+element[2]*2
+                            continue                    
+                        #if dword
+                        if element[1] == 4:
+                            if arch/8 == 4:
+                                for x in range(element[2]):
+                                    tmp = self.examine_mem_reference(base_addr)
+                                    tmpdata = format_reference_chain_x(tmp,vmmaps)
+                                    result.append([element[0],tmpdata,x])
+                                    base_addr=base_addr+4
+                            else:
+                                te=str(element[2])+"wx"
+                                out = self.execute_redirect("x/%s %s" % (te,base_addr))
+                                strg = out.split(":\t")[-1].strip()
+                                result.append([element[0],strg])
+                                base_addr=base_addr+element[2]*4
+                            continue
+                        #if qword
+                        if element[1]==8:
+                            if arch/8 == 8:
+                                for x in range(element[2]):
+                                    tmp = self.examine_mem_reference(base_addr)
+                                    tmpdata = format_reference_chain_x(tmp,vmmaps)
+                                    result.append([element[0],tmpdata,x])
+                                    base_addr=base_addr+8
+                            else:
+                                te=str(element[2])+"wx"
+                                out = self.execute_redirect("x/%s %s" % (te,base_addr))
+                                strg = out.split(":\t")[-1].strip()
+                                result.append([element[0],strg])
+                                base_addr=base_addr+element[2]*4   
+            return result
+        
+        
+        vmmap=self.get_vmmap()
+        data = exam_data(structs,name,addr,arch,vmmap)
+        text=""
+        for row in data:
+            tmp=""
+            if len(row[0])<8:
+                tmp="\t"
+            if len(row)==3:
+                text += row[0]+"\t"+tmp+"["+str(row[2])+"] "+row[1]
+            else:
+                text += row[0]+"\t"+tmp+row[1]
+            tmp=""
+            text +="\n"
+        print("struct %s = %s imported from %s :\n"%(name,hex(addr),filename))        
+        print(text)
+        return
+
+
     ##############################
     #           HEAP             #
     ##############################
@@ -3510,6 +3633,8 @@ class PEDA(object):
 
     #heap trace
     def heap_trace(self):
+        global arch
+        arch=self.getarch()[1]
         class Finish_breakpoint(gdb.FinishBreakpoint):
             def __init__(self,namebp,arg=""):
                 gdb.FinishBreakpoint.__init__(self,gdb.newest_frame(),internal=True)
@@ -3517,12 +3642,13 @@ class PEDA(object):
                 self.arg = arg
 
             def stop(self):
+                global arch
                 if "_int_malloc" == self.namebp:
-                    chunk = int(self.return_value)
+                    chunk = int(self.return_value);
                     print(green("%s->0x%x"%(self.arg,chunk)))
                 if "_int_realloc" == self.namebp:
                     chunk = hex(int(self.return_value))
-                    print(green(self.arg+chunk ) )    
+                    print(green(self.arg+"->"+chunk ) )    
             def out_of_scope(self):
                 print(red("out_of_scope"))  
                 if "_int_malloc" == self.namebp:
@@ -3549,12 +3675,12 @@ class PEDA(object):
                     Finish_breakpoint("_int_malloc",arg)
                 if "_int_free" in self.location:
                     chunk = int(gdb.parse_and_eval("p"))
-                    print(yellow("free(0x%x)"%(chunk+0x10)))
+                    print(yellow("free(0x%x)"%(chunk+int(arch/4))))
                 if "_int_realloc" in self.location:
                     oldchunk = int(gdb.parse_and_eval("oldp"))
                     oldsize = int(gdb.parse_and_eval("oldsize"))
                     newsize = int(gdb.parse_and_eval("nb"))
-                    arg = "realloc(chunk=0x%x,oldsize=0x%x,newsize=0x%x)"%(oldchunk,oldsize,newsize)
+                    arg = "realloc(chunk=0x%x,oldsize=0x%x,newsize=0x%x)"%(oldchunk+int(arch/4),oldsize,newsize)
                     print(blue(arg))
                     Finish_breakpoint("_int_realloc",arg)
                 return
@@ -3773,6 +3899,29 @@ class PEDACmd(object):
         "Show key"
         print("http://libc.babyphd.net/libc_rop | 804e20f0c587d9624b3001b1b6bb8e0d")
 
+    def idastruct(self,*arg):
+        """
+        Display struct data was parsed from [*.idb | *.i64]
+        Usage:
+            MYNAME structname address
+        """
+        from idbparser import parse_idb
+        name = arg[0]
+        addr = int(arg[1],16)
+        arch = peda.getarch()[1]
+        for filename in os.listdir("."):
+            if filename.endswith(".idb"):
+                structs = parse_idb(filename)
+                if name not in structs.keys():
+                    continue                    
+                peda.dump_struct(structs,name,addr,arch,filename)
+            if filename.endswith("i64"):
+                structs = parse_idb(filename)
+                if name not in structs.keys():
+                    continue
+                peda.dump_struct(structs,name,addr,arch,filename)
+        return
+
     def xstruct(self,*arg):
         """
         Display struct data in memory
@@ -3783,123 +3932,8 @@ class PEDACmd(object):
         addr = int(arg[1],16)
         arch = peda.getarch()[1]
         filename = "peda-structs"
-        struct = peda.parse_struct(filename)
-        def format_reference_chain_x(chain,maps):
-            """
-            Colorize a chain of references
-            """
-            def where_ru(maps,addr):
-                addr = to_int(addr)
-                for (start, end, perm, mapname) in maps:
-                    if start <= addr and addr < end:
-                        if "home" in mapname:
-                            return "[infile]" 
-                        if "/lib/" in mapname:
-                            return "[inlibc]"
-                        if "heap" in mapname:
-                            return "[heap]"
-                        return mapname
-                return None
-
-            v = t = vn = None
-            text = ""
-            if not chain:
-                text += "Cannot access memory address"
-            else:
-                first = True
-                for (v, t, vn) in chain:
-                    if t != "value":
-                        text += "%s%s" % ("--> " if not first else "", format_address(v, t))
-                        text += where_ru(maps,v)
-                    else:
-                        text += "%s%s" % ("--> " if not first else "", v)
-                    first = False
-
-                if vn:
-                    text += "(%s)" % vn
-                else:
-                    if v != "0x0":
-                        s = hex2str(v)
-                        if is_printable(s, "\x00"):
-                            text += "(%s)" % string_repr(s.split(b"\x00")[0])
-            return text
-
-        def exam_data(structs,name,address,arch,vmmaps):
-            #structs [name,size,num] ['name[32]', 1, 32]
-            result = [] #[name,data]
-            for str_name in structs:
-                base_addr = address
-                if str_name == name:
-                    for i in range(len(structs[name])):                     
-                        element = structs[name][i]
-                        #if string
-                        if element[1]==1: #size=1
-                            if element[2]>1: # string
-                                tmp = peda.examine_mem_reference(base_addr)
-                                tmpdata = format_reference_chain_x(tmp,vmmaps)
-                                result.append([element[0],tmpdata])
-                                base_addr=base_addr+element[2]
-                                continue
-                            if element[2]==1:#1byte
-                                out = peda.execute_redirect("x/bx %s" % base_addr)
-                                strg = out.split(":\t")[-1].strip()
-                                result.append([element[0],strg])
-                                base_addr=base_addr+element[2]
-                                continue
-                        #if hword
-                        if element[1]==2:
-                            te=str(element[2])+"hx"
-                            out = peda.execute_redirect("x/%s %s" % (te,base_addr))
-                            strg = out.split(":\t")[-1].strip()
-                            result.append([element[0],strg])
-                            base_addr=base_addr+element[2]*2
-                            continue                    
-                        #if dword
-                        if element[1] == 4:
-                            if arch/8 == 4:
-                                for x in range(element[2]):
-                                    tmp = peda.examine_mem_reference(base_addr)
-                                    tmpdata = format_reference_chain_x(tmp,vmmaps)
-                                    result.append([element[0],tmpdata,x])
-                                    base_addr=base_addr+4
-                            else:
-                                te=str(element[2])+"wx"
-                                out = peda.execute_redirect("x/%s %s" % (te,base_addr))
-                                strg = out.split(":\t")[-1].strip()
-                                result.append([element[0],strg])
-                                base_addr=base_addr+element[2]*4
-                            continue
-                        #if qword
-                        if element[1]==8:
-                            if arch/8 == 8:
-                                for x in range(element[2]):
-                                    tmp = peda.examine_mem_reference(base_addr)
-                                    tmpdata = format_reference_chain_x(tmp,vmmaps)
-                                    result.append([element[0],tmpdata,x])
-                                    base_addr=base_addr+8
-                            else:
-                                te=str(element[2])+"wx"
-                                out = peda.execute_redirect("x/%s %s" % (te,base_addr))
-                                strg = out.split(":\t")[-1].strip()
-                                result.append([element[0],strg])
-                                base_addr=base_addr+element[2]*4   
-            return result
-            
-        vmmap=peda.get_vmmap()
-        data = exam_data(struct,name,addr,arch,vmmap)
-        text=""
-        for row in data:
-            tmp=""
-            if len(row[0])<8:
-                tmp="\t"
-            if len(row)==3:
-                text += row[0]+"\t"+tmp+"["+str(row[2])+"] "+row[1]
-            else:
-                text += row[0]+"\t"+tmp+row[1]
-            tmp=""
-            text +="\n"
-        msg("struct %s = %s imported from %s :\n"%(name,hex(addr),filename))        
-        msg(text)
+        structs = peda.parse_struct(filename)
+        peda.dump_struct(structs,name,addr,arch,filename)
         return
 
 
@@ -6547,7 +6581,7 @@ class PEDACmd(object):
             MYNAME generate [arch/]platform type [port] [host]
             MYNAME search keyword (use % for any character wildcard)
             MYNAME display shellcodeId (shellcodeId as appears in search results)
-	    MYNAME zsc [generate customize shellcode]
+        MYNAME zsc [generate customize shellcode]
 
             For generate option:
                 default port for bindport shellcode: 16706 (0x4142)
@@ -6630,7 +6664,7 @@ class PEDACmd(object):
                 return
 
             msg(res)
-	#OWASP ZSC API Z3r0D4y.Com
+    #OWASP ZSC API Z3r0D4y.Com
         elif mode == "zsc":
             'os lists'
             oslist = ['linux_x86','linux_x64','linux_arm','linux_mips','freebsd_x86',
