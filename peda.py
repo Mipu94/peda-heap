@@ -3260,7 +3260,9 @@ class PEDA(object):
         for (start,end,perm,path) in self.get_vmmap():
             if path == "mapped":
                 chunk = self.format_chunk(start)
-                size = chunk['size']
+                gdb_type = gdb.lookup_type('struct malloc_chunk')
+                sizename = gdb_type.fields()[1].name
+                size = chunk[sizename]
                 if size & self.IS_MMAPED:
                     size = size & 0xfffffff8
                     if (size > 8) & (size < end) :
@@ -3286,9 +3288,12 @@ class PEDA(object):
 
     def chunk_inuse(self,addr):
         chunk = self.format_chunk(addr)
-        chunksize = int(chunk['size']) & ~7
+        gdb_type = gdb.lookup_type('struct malloc_chunk')
+        sizename = gdb_type.fields()[1].name
+
+        chunksize = int(chunk[sizename]) & ~7
         nextchunk = self.format_chunk(addr+chunksize)
-        next_prev_inuse = int(nextchunk['size']) & self.PREV_INUSE == 1
+        next_prev_inuse = int(nextchunk[sizename]) & self.PREV_INUSE == 1
         return next_prev_inuse
 
     def malloc_chunk(self,addr,isTop=0,debug=0):
@@ -3303,11 +3308,12 @@ class PEDA(object):
             else:
                 return "."
         chunk = self.format_chunk(addr)
-        size = int(chunk['size'])
+        gdb_type = gdb.lookup_type('struct malloc_chunk')
+        sizename = gdb_type.fields()[1].name
+        size = int(chunk[sizename])
         if (size <= 8)|(size > addr) :
             print(red("overlap at 0x%x -- size=0x%x"%(addr,size)))
-            if debug==0:
-                return None
+            return None
         prev_inuse = (size & self.PREV_INUSE) == 1
         is_mmaped = (size & self.IS_MMAPED) == 2
         non_main_arena = (size & self.NON_MAIN_ARENA) == 4
@@ -3375,17 +3381,19 @@ class PEDA(object):
         print('Top Chunk: ',hex(top))
         print('Last Remainder: ',last_remainder)
         addr = heap_base
+        print(hex(addr))
         while addr <= top:
             isTop = 0
             if addr == top:
                 isTop = 1
             if not self.is_address(addr):
                 break
-
             chunk = self.malloc_chunk(addr,isTop)
             if chunk == None:
                     return
-            size = int(chunk['size'])
+            gdb_type = gdb.lookup_type('struct malloc_chunk')
+            sizename = gdb_type.fields()[1].name
+            size = int(chunk[sizename])
             # Clear the bottom 3 bits
             size &= ~7
             if size == 0:
@@ -3433,7 +3441,9 @@ class PEDA(object):
                     f.write(heap_all)
                     f.close()
                     return
-            size = int(chunk['size'])
+            gdb_type = gdb.lookup_type('struct malloc_chunk')
+            sizename = gdb_type.fields()[1].name
+            size = int(chunk[sizename])
             # Clear the bottom 3 bits
             size &= ~7
             if size == 0:
@@ -3455,7 +3465,7 @@ class PEDA(object):
                     f.close()
                     return
                 heap_all+=str(addr)+" "
-                size = int(chunk['size'])
+                size = int(chunk[sizename])
                 size &= ~7
                 if size == 0:
                     break
