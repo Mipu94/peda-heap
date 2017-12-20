@@ -3863,8 +3863,7 @@ class PEDACmd(object):
         """
         address = int(arg[1],16)
         exm = arg[0]
-        filename = peda.getfile()
-        base = peda.get_vmmap(filename)[0][0]
+        base = peda.get_vmmap()[0][0]
         location=address+base
         peda.execute("x/%s %s"%(exm,hex(location)))
         return
@@ -3876,8 +3875,9 @@ class PEDACmd(object):
             bp address 
         """
         address=int(arg[0],16)
-        filename = peda.getfile()
-        base = peda.get_vmmap(filename)[0][0]
+        base = peda.get_vmmap()[0][0]
+        print(base)
+
         peda.execute("break *%s"%(hex(base+address)))
         return
     
