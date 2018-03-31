@@ -3875,11 +3875,13 @@ class PEDACmd(object):
             bp address 
         """
         address=int(arg[0],16)
-        base = peda.get_vmmap()[0][0]
-        print(base)
+        #base = peda.get_vmmap()[0][0]
+        for (start, end, perm, mapname) in peda.get_vmmap():
+                        if "home" in mapname:
+                            print(start)
+                            peda.execute("break *%s"%(hex(start+address)))
+                            return None
 
-        peda.execute("break *%s"%(hex(base+address)))
-        return
     
     def baseaddr(self,*arg):
         """
