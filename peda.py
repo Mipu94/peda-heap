@@ -3378,25 +3378,30 @@ class PEDA(object):
         if main_arena !=None:
             top= int(main_arena['top'])
         
-        print('Top Chunk: ',hex(top))
-        print('Last Remainder: ',last_remainder)
         addr = heap_base
-        print(hex(addr))
+        gdb_type = gdb.lookup_type('struct malloc_chunk')
+        sizename = gdb_type.fields()[1].name
+        chunk = self.format_chunk(addr)
+        size = int(chunk[sizename])
+        # for case 32 bit binary run on 64bit arch, it's shift 8 bytes
+        if size == 0:
+            addr += 8
         while addr <= top:
             isTop = 0
             if addr == top:
                 isTop = 1
             if not self.is_address(addr):
+                print("break")
                 break
             chunk = self.malloc_chunk(addr,isTop)
             if chunk == None:
+                    print("return")
                     return
-            gdb_type = gdb.lookup_type('struct malloc_chunk')
-            sizename = gdb_type.fields()[1].name
             size = int(chunk[sizename])
             # Clear the bottom 3 bits
             size &= ~7
             if size == 0:
+                print("size")
                 break
             addr += size
         ############# mmap heap chunks #########
@@ -3405,6 +3410,7 @@ class PEDA(object):
             if not self.is_address(addr):
                 return
             chunk = self.malloc_chunk(addr,0)
+        print('Last Remainder: ',last_remainder)
         
 
     def save_heap_state(self):
