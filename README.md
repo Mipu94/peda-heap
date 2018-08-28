@@ -10,7 +10,7 @@ peda-heap
 ### [heap]
   * `heap set_mainarena [new_addr]` -- set main_arena = newvalue
   * `heap all` -- print heap info (mmap + sbrk)
-  * `heap freed [main_arena]` -- print freed chunks  (fastbinY + bins)
+  * `heap freed [main_arena]` -- print freed chunks  (tcache + fastbinY + bins)
   * `heap fastbin [main_arena]` -- print freed chunks(fastbinY)
   * `heap bins [main_arena]` -- print freed chunks (bins)
   * `heap trace` -- print (arg + return_value) of malloc,free,realloc
