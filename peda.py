@@ -3383,7 +3383,7 @@ class PEDA(object):
         sizename = gdb_type.fields()[1].name
         chunk = self.format_chunk(addr)
         size = int(chunk[sizename])
-        # for case 32 bit binary run on 64bit arch, it's shift 8 bytes
+        # for case 32 bit binary run on 64bit arch, it may be shift 8 bytes
         if size == 0:
             addr += 8
         while addr <= top:
@@ -3391,17 +3391,17 @@ class PEDA(object):
             if addr == top:
                 isTop = 1
             if not self.is_address(addr):
-                print("break")
+                print("Not an address: %x",addr)
                 break
             chunk = self.malloc_chunk(addr,isTop)
             if chunk == None:
-                    print("return")
+                    print("Chunk None")
                     return
             size = int(chunk[sizename])
             # Clear the bottom 3 bits
             size &= ~7
             if size == 0:
-                print("size")
+                print("invalid size")
                 break
             addr += size
         ############# mmap heap chunks #########
@@ -3439,11 +3439,11 @@ class PEDA(object):
             if not self.is_address(addr):
                 break
             chunk = self.format_chunk(addr)
-            heap_all+=str(addr)+" "
-            if isTop==1:
+            heap_all += str(addr)+" "
+            if isTop == 1:
                 break
             if chunk == None:
-                    f=open(filename,"w")
+                    f = open(filename,"w")
                     f.write(heap_all)
                     f.close()
                     return
@@ -3496,6 +3496,93 @@ class PEDA(object):
                 return
             self.malloc_chunk(chunk,0,1)
 
+    def use_tcache(self):
+        try:
+            x = gdb.lookup_type("struct tcache_perthread_struct")
+            return True
+        except Exception as e:
+            return False
+        return
+    
+    def parse_tcache(self, addr):
+        tcache = peda.value_from_type("struct tcache_perthread_struct",addr)
+        gdb_type = gdb.lookup_type('struct tcache_perthread_struct')
+        counts = gdb_type.fields()[0].name
+        entries = gdb_type.fields()[1].name
+        print(yellow("TCACHE: 0x%x"%addr))
+
+        for i in range(0,64):
+            addr = int(tcache[entries][i])
+            size_t_size = gdb.lookup_type('size_t').sizeof
+            if addr:
+                print("counts:", int(tcache[counts][i]) )
+                while addr:
+                    addr = addr - 2*size_t_size 
+                    if not self.is_address(addr):
+                        return
+                    tmp = addr
+                    addr = self.malloc_chunk(addr)["fd"]
+                    if addr==None:
+                        return
+                    addr = int(addr)
+                    if self.is_address(addr):
+                        if tmp == int(self.format_chunk(addr)["fd"]):
+                            self.malloc_chunk(addr)
+                            print(red("loop in fastbin detected at address: 0x%x"%tmp))
+                            break
+                    else:
+                        if addr!=0:
+                            print(red("invalid fastbin->fd: 0x%x->0x%x"%(tmp,addr)))    
+                            break
+
+
+        #for i in range:
+        #return
+
+    def get_tcache_by_pid(self):
+        if self.use_tcache(): 
+            c_ithread = gdb.selected_thread()
+            try:
+                # inferiors = gdb.inferiors()
+                # for inferior in inferiors:
+                #     thread_iter = iter(inferior.threads())
+                #     for ithread in thread_iter:
+                #         if ithread.num == pid:
+                #             ithread.switch()
+                s_tcache = self.execute_redirect('p tcache')
+                if s_tcache == None:
+                    if c_ithread.num != 1:
+                        return
+                    # find 1st chunk on heap is tcache
+                    heap_base = self.get_heap_bounds_sbrk()[0]
+                    if heap_base == None:
+                        print(red('Could not find the heap'))
+                        return                    
+                    addr = heap_base
+                    gdb_type = gdb.lookup_type('struct malloc_chunk')
+                    sizename = gdb_type.fields()[1].name
+                    chunk = self.format_chunk(addr)
+                    size = int(chunk[sizename])
+                    size_t_size = gdb.lookup_type('size_t').sizeof
+
+                    # for case 32 bit binary run on 64bit arch, it may be shift 8 bytes
+                    if size == 0:
+                        addr += size_t_size*2
+                    self.parse_tcache(addr+size_t_size*2)
+                    # c_ithread.switch()
+                    return
+                else:
+                    i = s_tcache.find(') ') + 2
+                    tcache = int(s_tcache[i:],16)
+                    if tcache == 0:
+                        return
+                    self.parse_tcache(tcache)
+                    # c_ithread.switch()
+
+            except Exception as e:
+                print(e)
+                return
+
     def bins(self,addr=None):
         main_arena = self.get_main_arena(addr)
         if main_arena == None:
@@ -3525,7 +3612,7 @@ class PEDA(object):
                         break
             else:
                 error_msg("0x%x is not a address"%p)
-                    
+
     def fastbin(self,addr=None):
         """
         Prints out the contents of the fastbins of the main arena or the arena
@@ -3844,6 +3931,8 @@ class PEDACmd(object):
         addr = None
         if len(arg) == 1:
             addr = int(arg[0],16)
+
+        peda.get_tcache_by_pid()
         peda.fastbin(addr)
         peda.bins(addr)
         return 
