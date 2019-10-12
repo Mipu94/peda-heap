@@ -3311,9 +3311,12 @@ class PEDA(object):
         gdb_type = gdb.lookup_type('struct malloc_chunk')
         sizename = gdb_type.fields()[1].name
         size = int(chunk[sizename])
+        invalid_size = False
         if (size <= 8)|(size > addr) :
             print(red("overlap at 0x%x -- size=0x%x"%(addr,size)))
-            return None
+            invalid_size = True
+
+            #return None
         prev_inuse = (size & self.PREV_INUSE) == 1
         is_mmaped = (size & self.IS_MMAPED) == 2
         non_main_arena = (size & self.NON_MAIN_ARENA) == 4
@@ -3329,24 +3332,29 @@ class PEDA(object):
             headersize = 16
         data = addr + headersize
         show += " DATA[" + hex(data)+"]"
+
         if size>=0x20:
             bytes = self.dumpmem(data, data+0x20)
         else:
-            bytes = self.dumpmem(data, data+size)
+            if invalid_size:
+                bytes = self.dumpmem(data, data+0x20)
+            else:
+                bytes = self.dumpmem(data, data+size)
         if bytes is None:
             warning_msg("cannot retrieve memory content at 0x%x"%addr)
         asciibytes = "".join([ascii_char(c) for c in bytes_iterator(bytes)])
         show += " |" + asciibytes + "|"
         if debug==0 :
-            if self.is_address(addr+size-0x10)==False:
-                print(red("overlap at 0x%x -- size=0x%x"%(addr,size)))
-                return None
+            # if self.is_address(addr+size-0x10)==False:
+            #     print(red("overlap at 0x%x -- size=0x%x"%(addr,size)))
+                # return None
             if is_mmaped:
                 show += green(' IS_MMAPED')
                 print(show)
                 return chunk
-            if self.chunk_inuse(addr):
-                show += green(' INUSED')
+            if self.is_address(addr+size):
+                if self.chunk_inuse(addr):
+                    show += green(' INUSED')
             if prev_inuse:
                 show += green(' PREV_INUSE')
                 if "INUSED" not in show:
@@ -3359,10 +3367,10 @@ class PEDA(object):
 
     def heapall(self,addr=None):
         """
-        Prints out all chunks from an addr, or the arena specified by `addr`.
+        Prints out all chunks in the main_arena, or the arena specified by `addr`.
         """
         ########## sbrk heap chunks ###########
-        main_arena = self.get_main_arena()
+        main_arena = self.get_main_arena(addr)
         last_remainder = None
         if main_arena == None:
             last_remainder = None
@@ -3370,8 +3378,6 @@ class PEDA(object):
             last_remainder = main_arena['last_remainder']
 
         heap_base = self.get_heap_bounds_sbrk()[0]
-        if addr != None:
-            heap_base = addr
         if heap_base == None:
             print(red('Could not find the heap'))
             return
@@ -3512,35 +3518,35 @@ class PEDA(object):
         counts = gdb_type.fields()[0].name
         entries = gdb_type.fields()[1].name
         print(yellow("TCACHE: 0x%x"%addr))
+
         for i in range(0,64):
             addr = int(tcache[entries][i])
             size_t_size = gdb.lookup_type('size_t').sizeof
-            if addr:
-                print("counts:", int(tcache[counts][i]) )
-                k = 0
-                tmp = []
+            # if int(tcache[counts][i]) <1:
+            #     continue
+            if addr :
+                print(green("INDEX:0x%x -- SIZE:0x%x -- COUNT: 0x%x"%(i,size_t_size*2*i+size_t_size*4 ,int(tcache[counts][i]))))
                 while addr:
-                    k += 1
-                    if k == 7:
-                        break
                     addr = addr - 2*size_t_size 
                     if not self.is_address(addr):
-                        print(red("overlap!"))
                         break
-                    tmp.append(addr)
-                    addr = self.malloc_chunk(addr)["fd"]
+                    tmp = addr
+                    addr = self.malloc_chunk(addr)
+                    if addr == None:
+                        break
+                    else:
+                        addr = addr["fd"]
                     if addr==None:
                         break
                     addr = int(addr)
                     if self.is_address(addr):
                         if tmp == int(self.format_chunk(addr)["fd"]):
-                            if addr in tmp:
-                                print(red("loop in fastbin detected at address: 0x%x"%addr))
-                                break
                             self.malloc_chunk(addr)
+                            print(red("loop in fastbin detected at address: 0x%x"%tmp))
+                            break
                     else:
                         if addr!=0:
-                            print(red("invalid fastbin->fd: 0x%x->0x%x"%(tmp[len(tmp)-1],addr)))    
+                            print(red("invalid fastbin->fd: 0x%x->0x%x"%(tmp,addr)))    
                             break
 
 
@@ -3608,9 +3614,13 @@ class PEDA(object):
                 p = addr
                 print("bins %d : "%i)
                 while True:
-                    p = self.malloc_chunk(p)["fd"]
+                    p = self.malloc_chunk(p)
                     if p==None:
-                        return
+                        break
+                    else:
+                        p = p["fd"]
+                    if p==None:
+                        break
                     p = int(p)
                     if not self.is_address(p):
                         error_msg("0x%x is not a address"%p)
@@ -3646,8 +3656,12 @@ class PEDA(object):
                     return
                 tmp = addr
                 addr = self.malloc_chunk(addr)["fd"]
+                if addr == None:
+                    break
+                else:
+                    addr = addr["fd"]
                 if addr==None:
-                    return
+                    break
                 addr = int(addr)
                 if self.is_address(addr):
                     if tmp == int(self.format_chunk(addr)["fd"]):
@@ -3751,34 +3765,15 @@ class PEDA(object):
                 gdb.FinishBreakpoint.__init__(self,gdb.newest_frame(),internal=True)
                 self.namebp = namebp
                 self.arg = arg
-                self.tcache = 0
 
             def stop(self):
                 global arch
                 if "_int_malloc" == self.namebp:
                     chunk = int(self.return_value);
-                    print(green("malloc(0x%x)->0x%x"%(self.arg,chunk)))
-                    if not self.tcache:
-                        self.tcache = 1
-                        return
-                    for i in range(self.arg):
-                        cmd ="set {char}0x%x = 0x%x" % (chunk+i, 0xc0)
-                        out = gdb.execute(cmd)
-
-                        
-                    # peda.writemem(chunk,data)
-
+                    print(green("%s->0x%x"%(self.arg,chunk)))
                 if "_int_realloc" == self.namebp:
-                    chunk = int(self.return_value)
-                    print(green("realloc(chunk=0x%x,oldsize=0x%x,newsize=0x%x)"%(self.arg[0],self.arg[1],self.arg[2])+"->%x"%chunk ) )    
-                    chunk = chunk + self.arg[1]
-                    if( arg[2] < arg[1]):
-                        return
-                    for i in range(abs(self.arg[2]-self.arg[1])):
-                        cmd ="set {char}0x%x = 0x%x" % (chunk+arg[1], 0xc0)
-                        out = gdb.execute(cmd)
-
-
+                    chunk = hex(int(self.return_value))
+                    print(green(self.arg+"->"+chunk ) )    
             def out_of_scope(self):
                 print(red("out_of_scope"))  
                 if "_int_malloc" == self.namebp:
@@ -3800,8 +3795,8 @@ class PEDA(object):
             def stop(self):
                 if "_int_malloc" in self.location:
                     size = int(gdb.parse_and_eval("bytes"))
-                    arg= size
-                    # print(blue(arg))
+                    arg= "malloc(0x%x)"%size
+                    print(blue(arg))
                     Finish_breakpoint("_int_malloc",arg)
                 if "_int_free" in self.location:
                     chunk = int(gdb.parse_and_eval("p"))
@@ -3810,8 +3805,8 @@ class PEDA(object):
                     oldchunk = int(gdb.parse_and_eval("oldp"))
                     oldsize = int(gdb.parse_and_eval("oldsize"))
                     newsize = int(gdb.parse_and_eval("nb"))
-                    arg = [oldchunk+int(arch/4),oldsize,newsize]
-                    # print(blue(arg))
+                    arg = "realloc(chunk=0x%x,oldsize=0x%x,newsize=0x%x)"%(oldchunk+int(arch/4),oldsize,newsize)
+                    print(blue(arg))
                     Finish_breakpoint("_int_realloc",arg)
                 return
         trace_malloc = Handler_Breakpoint("*_int_malloc")
@@ -4032,11 +4027,6 @@ class PEDACmd(object):
     def showkey(self):
         "Show key"
         print("http://libc.babyphd.net/libc_rop | 804e20f0c587d9624b3001b1b6bb8e0d")
-
-    def heap_around(self, *arg):
-        "heap around 1 address"
-        address=int(arg[0],16)
-        
 
     def idastruct(self,*arg):
         """
@@ -5898,7 +5888,6 @@ class PEDACmd(object):
                 text += yellow("Offset: 0x%x\n" % (address-start))
                 text += red("Perm  : %s\n" % perm)
                 text += blue("Name  : %s" % name)
-
         msg(text)
 
         return
