@@ -1,7 +1,7 @@
 peda-heap
 =========
 ## Description
-  This is some commands that I was added to peda when playing CTF.
+  Some commands that were added to peda to debug heap.
   
   Thanks to [longld](https://github.com/longld) very much for a great template! [PEDA](https://github.com/longld/peda)
 
