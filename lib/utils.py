@@ -46,7 +46,7 @@ class memoized(object):
         try:
             return self.cache[(self.func, self.instance, args) + tuple(kwargs.items())]
         except KeyError:
-            if self.instance is None:
+            if self.instance == None:
                 value = self.func(*args, **kwargs)
             else:
                 value = self.func(self.instance, *args, **kwargs)
@@ -55,7 +55,7 @@ class memoized(object):
         except TypeError:
             # uncachable -- for instance, passing a list as an argument.
             # Better to not cache than to blow up entirely.
-            if self.instance is None:
+            if self.instance == None:
                 return self.func(*args, **kwargs)
             else:
                 return self.func(self.instance, *args, **kwargs)
@@ -66,7 +66,7 @@ class memoized(object):
 
     def __get__(self, obj, objtype):
         """Support instance methods."""
-        if obj is None:
+        if obj == None:
             return self
         else:
             self.instance = obj
@@ -83,7 +83,7 @@ def reset_cache(module=None):
     """
     Reset memoized caches of an instance/module
     """
-    if module is None:
+    if module == None:
         module = sys.modules['__main__']
 
     for m in dir(module):
@@ -306,7 +306,7 @@ def normalize_argv(args, size=0):
     """
     args = list(args)
     for (idx, val) in enumerate(args):
-        if to_int(val) is not None:
+        if to_int(val) != None:
             args[idx] = to_int(val)
         if size and idx == size:
             return args[:idx]
@@ -421,7 +421,7 @@ def check_badchars(data, chars=None):
     """
     Check an address or a value if it contains badchars
     """
-    if to_int(data) is None:
+    if to_int(data) == None:
         to_search = data
     else:
         data = to_hex(to_int(data))[2:]
@@ -552,7 +552,7 @@ def format_disasm_code(code, nearby=None):
     if not code:
         return result
 
-    if to_int(nearby) is not None:
+    if to_int(nearby) != None:
         target = to_int(nearby)
     else:
         target = 0
@@ -691,9 +691,9 @@ def cyclic_pattern(size=None, start=None, charset_type=None):
     else:
         charset = ''.join(set(charset))
 
-    if start is None:
+    if start == None:
         start = 0
-    if size is None:
+    if size == None:
         size = 0x10000
 
     size += start
@@ -714,7 +714,7 @@ def cyclic_pattern_offset(value):
         - offset in pattern if found
     """
     pattern = cyclic_pattern()
-    if to_int(value) is None:
+    if to_int(value) == None:
         search = value.encode('utf-8')
     else:
         search = hex2str(to_int(value))

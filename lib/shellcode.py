@@ -21,7 +21,7 @@ import sys
 import config
 from utils import msg, error_msg
 
-if sys.version_info.major is 3:
+if sys.version_info.major == 3:
     from urllib.request import urlopen
     from urllib.parse import urlencode
     pyversion = 3
@@ -285,9 +285,9 @@ class Shellcode():
         if not self.shellcodes or sctype not in self.shellcodes:
             return None
 
-        if port is None:
+        if port == None:
             port=16706
-        if host is None:
+        if host == None:
             host='127.127.127.127'
 
         shellcode = self.shellcodes[sctype]
@@ -306,7 +306,7 @@ class Shellcode():
 
     """ search() and display() use the shell-storm API """
     def search(self, keyword):
-        if keyword is None:
+        if keyword == None:
             return None
         try:
             msg("Connecting to shell-storm.org...")
@@ -343,7 +343,7 @@ class Shellcode():
         return data_dl
 
     def display(self, shellcodeId):
-        if shellcodeId is None:
+        if shellcodeId == None:
             return None
 
         try:
@@ -376,7 +376,7 @@ class Shellcode():
                     'job': job,
                     'encode': encode})
             shellcode = urlopen("http://api.z3r0d4y.com/index.py?%s\n"%(str(params))).read()
-            if pyversion is 3:
+            if pyversion == 3:
                 shellcode = str(shellcode,encoding='ascii')
             return '\n"'+shellcode.replace('\n','')+'"\n'
         except:
