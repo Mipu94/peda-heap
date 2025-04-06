@@ -103,7 +103,7 @@ class MovedModule(_LazyDescr):
     def __init__(self, name, old, new=None):
         super(MovedModule, self).__init__(name)
         if PY3:
-            if new is None:
+            if new == None:
                 new = name
             self.mod = new
         else:
@@ -139,18 +139,18 @@ class MovedAttribute(_LazyDescr):
     def __init__(self, name, old_mod, new_mod, old_attr=None, new_attr=None):
         super(MovedAttribute, self).__init__(name)
         if PY3:
-            if new_mod is None:
+            if new_mod == None:
                 new_mod = name
             self.mod = new_mod
-            if new_attr is None:
-                if old_attr is None:
+            if new_attr == None:
+                if old_attr == None:
                     new_attr = name
                 else:
                     new_attr = old_attr
             self.attr = new_attr
         else:
             self.mod = old_mod
-            if old_attr is None:
+            if old_attr == None:
                 old_attr = name
             self.attr = old_attr
 
@@ -652,22 +652,22 @@ if PY3:
 
 
     def reraise(tp, value, tb=None):
-        if value is None:
+        if value == None:
             value = tp()
-        if value.__traceback__ is not tb:
+        if value.__traceback__ != tb:
             raise value.with_traceback(tb)
         raise value
 
 else:
     def exec_(_code_, _globs_=None, _locs_=None):
         """Execute code in a namespace."""
-        if _globs_ is None:
+        if _globs_ == None:
             frame = sys._getframe(1)
             _globs_ = frame.f_globals
-            if _locs_ is None:
+            if _locs_ == None:
                 _locs_ = frame.f_locals
             del frame
-        elif _locs_ is None:
+        elif _locs_ == None:
             _locs_ = _globs_
         exec("""exec _code_ in _globs_, _locs_""")
 
@@ -679,7 +679,7 @@ else:
 
 if sys.version_info[:2] == (3, 2):
     exec_("""def raise_from(value, from_value):
-    if from_value is None:
+    if from_value == None:
         raise value
     raise value from from_value
 """)
@@ -693,11 +693,11 @@ else:
 
 
 print_ = getattr(moves.builtins, "print", None)
-if print_ is None:
+if print_ == None:
     def print_(*args, **kwargs):
         """The new-style print function for Python 2.4 and 2.5."""
         fp = kwargs.pop("file", sys.stdout)
-        if fp is None:
+        if fp == None:
             return
         def write(data):
             if not isinstance(data, basestring):
@@ -705,21 +705,21 @@ if print_ is None:
             # If the file has an encoding, encode unicode with it.
             if (isinstance(fp, file) and
                 isinstance(data, unicode) and
-                fp.encoding is not None):
+                fp.encoding != None):
                 errors = getattr(fp, "errors", None)
-                if errors is None:
+                if errors == None:
                     errors = "strict"
                 data = data.encode(fp.encoding, errors)
             fp.write(data)
         want_unicode = False
         sep = kwargs.pop("sep", None)
-        if sep is not None:
+        if sep != None:
             if isinstance(sep, unicode):
                 want_unicode = True
             elif not isinstance(sep, str):
                 raise TypeError("sep must be None or a string")
         end = kwargs.pop("end", None)
-        if end is not None:
+        if end != None:
             if isinstance(end, unicode):
                 want_unicode = True
             elif not isinstance(end, str):
@@ -737,9 +737,9 @@ if print_ is None:
         else:
             newline = "\n"
             space = " "
-        if sep is None:
+        if sep == None:
             sep = space
-        if end is None:
+        if end == None:
             end = newline
         for i, arg in enumerate(args):
             if i:
@@ -752,7 +752,7 @@ if sys.version_info[:2] < (3, 3):
         fp = kwargs.get("file", sys.stdout)
         flush = kwargs.pop("flush", False)
         _print(*args, **kwargs)
-        if flush and fp is not None:
+        if flush and fp != None:
             fp.flush()
 
 _add_doc(reraise, """Reraise an exception.""")
@@ -784,7 +784,7 @@ def add_metaclass(metaclass):
     def wrapper(cls):
         orig_vars = cls.__dict__.copy()
         slots = orig_vars.get('__slots__')
-        if slots is not None:
+        if slots != None:
             if isinstance(slots, str):
                 slots = [slots]
             for slots_var in slots:
@@ -818,7 +818,7 @@ def python_2_unicode_compatible(klass):
 # Turn this module into a package.
 __path__ = []  # required for PEP 302 and PEP 451
 __package__ = __name__  # see PEP 366 @ReservedAssignment
-if globals().get("__spec__") is not None:
+if globals().get("__spec__") != None:
     __spec__.submodule_search_locations = []  # PEP 451 @UndefinedVariable
 # Remove other six meta path importers, since they cause problems. This can
 # happen if six is removed from sys.modules and then reloaded. (Setuptools does

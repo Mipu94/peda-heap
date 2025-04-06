@@ -156,7 +156,7 @@ def exploit(vuln):
         line = sys.stdin.readline()
         P.poll()
         ret = P.returncode
-        if ret is None:
+        if ret == None:
             P.stdin.write(line)
         else:
             if ret == -11:

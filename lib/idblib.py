@@ -85,13 +85,13 @@ def makeStringIO(data):
 
 def nonefmt(fmt, item):
     # helper for outputting None without raising an error
-    if item is None:
+    if item == None:
         return "-"
     return fmt % item
 
 
 def hexdump(data):
-    if data is None:
+    if data == None:
         return
     return binascii.b2a_hex(data).decode('utf-8')
 
@@ -119,7 +119,7 @@ class FileSection(object):
 
     def read(self, size=None):
         want = self.end - self.start - self.curpos
-        if size is not None and want > size:
+        if size != None and want > size:
             want = size
 
         if want <= 0:
@@ -982,7 +982,7 @@ class ID0File(object):
 
         """
         data = self.bytes(*args)
-        if data is not None:
+        if data != None:
             if len(data) == 1:
                 return struct.unpack("<B", data)[0]
             if len(data) == 2:
@@ -996,7 +996,7 @@ class ID0File(object):
     def string(self, *args):
         """ return string stored in node """
         data = self.bytes(*args)
-        if data is not None:
+        if data != None:
             return data.rstrip(b"\x00").decode('utf-8')
 
     def name(self, id):
